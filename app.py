@@ -31,7 +31,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ২. পিডিএফ জেনারেটর ক্লাস
+# ২. সেশন স্টেট ব্যাকআপ (Auto-Save-এর জন্য)
+if 'biz_name' not in st.session_state:
+    st.session_state['biz_name'] = "My Clothing Brand"
+if 'biz_email' not in st.session_state:
+    st.session_state['biz_email'] = "info@mybrand.com"
+if 'biz_phone' not in st.session_state:
+    st.session_state['biz_phone'] = "+880 1711-XXXXXX"
+if 'logo_path' not in st.session_state:
+    st.session_state['logo_path'] = None
+
+# ৩. পিডিএফ জেনারেটর ক্লাস
 class CustomReceiptPDF(FPDF):
     def __init__(self, b_name, b_email, b_phone, b_logo_path=None):
         super().__init__()
@@ -130,19 +140,28 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.set_text_color(0, 0, 0)
     pdf.output(filename)
 
-# ৩. সাইডবার সেটিংস
+# ৪. সাইডবার সেটিংস (Auto-Save functionality সহ)
 st.sidebar.markdown("### 🔐 Shop Settings")
-biz_name = st.sidebar.text_input("Business Name", "My Clothing Brand")
-biz_email = st.sidebar.text_input("Business Email", "info@mybrand.com")
-biz_phone = st.sidebar.text_input("Business Mobile", "+880 1711-XXXXXX")
+input_biz_name = st.sidebar.text_input("Business Name", st.session_state['biz_name'])
+input_biz_email = st.sidebar.text_input("Business Email", st.session_state['biz_email'])
+input_biz_phone = st.sidebar.text_input("Business Mobile", st.session_state['biz_phone'])
 
 uploaded_logo = st.sidebar.file_uploader("Upload Shop Logo (PNG)", type=["png"])
-logo_path = "temp_logo.png" if uploaded_logo else None
-if uploaded_logo:
-    with open(logo_path, "wb") as f:
-        f.write(uploaded_logo.getbuffer())
 
-# ৪. মূল অ্যাপ ইন্টারফেস (Beautiful Header)
+if st.sidebar.button("💾 Save Profile Settings", type="secondary"):
+    st.session_state['biz_name'] = input_biz_name
+    st.session_state['biz_email'] = input_biz_email
+    st.session_state['biz_phone'] = input_biz_phone
+    
+    if uploaded_logo:
+        logo_path = "saved_logo.png"
+        with open(logo_path, "wb") as f:
+            f.write(uploaded_logo.getbuffer())
+        st.session_state['logo_path'] = logo_path
+        
+    st.sidebar.success("✅ Settings Saved Successfully!")
+
+# ৫. মূল অ্যাপ ইন্টারফেস
 st.markdown('<div class="main-title">⚡ Smart-Receipt Pro Dashboard</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Create professional business invoices and track billing instantly.</div>', unsafe_allow_html=True)
 
@@ -182,7 +201,6 @@ with col_left:
 with col_right:
     st.markdown('<div class="section-header">💳 Billing & Summary</div>', unsafe_allow_html=True)
     
-    # পেমেন্ট, ডেলিভারি চার্জ এবং পেইড অ্যামাউন্ট সব এক লাইনে ও সুন্দর বক্সে
     pay_col1, pay_col2 = st.columns(2)
     with pay_col1:
         del_charge = st.number_input("Delivery Charge (TK)", min_value=0, value=60, step=10)
@@ -205,13 +223,19 @@ with col_right:
 
 st.markdown("---")
 
-# ডাউনলোড সেকশনটি নিচে বড় করে সাজানো
+# ডাউনলোড সেকশন
 st.markdown('<div class="section-header">📄 Actions</div>', unsafe_allow_html=True)
 if st.button("✨ Generate & Download PDF Memo", type="primary", use_container_width=True):
     if v_name.strip() == "":
         st.error("Please enter a Customer Name before generating the invoice!")
     else:
-        b_info = {'name': biz_name, 'email': biz_email, 'phone': biz_phone, 'logo': logo_path}
+        # সেশন স্টেট থেকে সেভ করা শপ ডাটা নেওয়া হচ্ছে
+        b_info = {
+            'name': st.session_state['biz_name'], 
+            'email': st.session_state['biz_email'], 
+            'phone': st.session_state['biz_phone'], 
+            'logo': st.session_state['logo_path']
+        }
         c_info = {'name': v_name, 'phone': v_phone, 'address': v_addr}
         
         pdf_filename = f"Receipt_{v_name.replace(' ', '_')}.pdf"
