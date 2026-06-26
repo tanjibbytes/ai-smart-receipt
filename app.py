@@ -1,66 +1,37 @@
 import streamlit as st
 from fpdf import FPDF
-import google.generativeai as genai
-import json
 import os
-import re
 
-# ১. পেজ সেটআপ
-st.set_page_config(page_title="AI Smart-Receipt Pro", page_icon="📄", layout="wide")
+# ১. পেজ সেটআপ ও থিম
+st.set_page_config(page_title="Smart-Receipt Pro", page_icon="📄", layout="wide")
 
-# ২. এআই কনফিগারেশন
-try:
-    GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
-    genai.configure(api_key=GENAI_API_KEY)
-except Exception as e:
-    st.error("API Key not configured in Secrets! Please check settings.")
+# Custom CSS for premium look
+st.markdown("""
+    <style>
+    .main-title {
+        font-size: 32px;
+        font-weight: bold;
+        color: #4F46E5;
+        margin-bottom: 5px;
+    }
+    .subtitle {
+        font-size: 16px;
+        color: #6B7280;
+        margin-bottom: 25px;
+    }
+    .section-header {
+        font-size: 20px;
+        font-weight: 600;
+        color: #1F2937;
+        margin-top: 15px;
+        margin-bottom: 15px;
+        border-left: 4px solid #4F46E5;
+        padding-left: 10px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-def extract_customer_info_with_ai(raw_message):
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    
-    prompt = f"""
-    You are an expert order management AI. Analyze the following online shopping order message from Bangladesh and extract details.
-    
-    Instructions:
-    1. Extract Customer Name, Phone, and Address. 
-    2. Identify all products mentioned. Extract up to 5 distinct products.
-    3. For each product, extract its name (clean and readable), quantity (default to 1 if not mentioned), and price (default to 0 if not mentioned).
-    
-    Message: "{raw_message}"
-    
-    Return ONLY a raw JSON object matching this structure, with no markdown formatting, no ```json tags, and no extra text:
-    {{
-        "name": "Customer Name",
-        "phone": "Phone Number",
-        "address": "Delivery Address",
-        "products": [
-            {{"name": "Product Name 1", "qty": 1, "price": 0}},
-            {{"name": "Product Name 2", "qty": 2, "price": 450}}
-        ]
-    }}
-    """
-    
-    try:
-        response = model.generate_content(prompt)
-        text_data = response.text.strip()
-        
-        # ক্লিনিং: যদি এআই ভুল করে কোনো ব্যাকটিক বা ```json ব্লক দেয় তা কেটে ফেলা
-        if "```" in text_data:
-            text_data = re.sub(r'```[a-zA-Z]*', '', text_data).strip()
-            
-        data = json.loads(text_data)
-        return data
-    except Exception as e:
-        # ব্যাকআপ সলিউশন: কোনো কারণে ফেল করলে ক্র্যাশ করবে না
-        phone_match = re.search(r'(01[3-9]\d{8})', raw_message)
-        return {
-            "name": "Customer Name",
-            "phone": phone_match.group(1).strip() if phone_match else "N/A",
-            "address": "Please type address manually",
-            "products": []
-        }
-
-# ৩. পিডিএফ জেনারেটর ক্লাস
+# ২. পিডিএফ জেনারেটর ক্লাস
 class CustomReceiptPDF(FPDF):
     def __init__(self, b_name, b_email, b_phone, b_logo_path=None):
         super().__init__()
@@ -87,7 +58,7 @@ class CustomReceiptPDF(FPDF):
     def footer(self):
         self.set_y(-15)
         self.set_font('Helvetica', 'I', 8)
-        self.cell(0, 10, 'Thank you for shopping with us! Powered by AI Smart-Receipt.', align='C')
+        self.cell(0, 10, 'Thank you for shopping with us! Powered by Smart-Receipt Pro.', align='C')
 
 def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_method, paid_amount):
     pdf = CustomReceiptPDF(b_info['name'], b_info['email'], b_info['phone'], b_info['logo'])
@@ -159,8 +130,8 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.set_text_color(0, 0, 0)
     pdf.output(filename)
 
-# ৪. সাইডবার সেটিংস
-st.sidebar.title("🔐 Shop Profile Settings")
+# ৩. সাইডবার সেটিংস
+st.sidebar.markdown("### 🔐 Shop Settings")
 biz_name = st.sidebar.text_input("Business Name", "My Clothing Brand")
 biz_email = st.sidebar.text_input("Business Email", "info@mybrand.com")
 biz_phone = st.sidebar.text_input("Business Mobile", "+880 1711-XXXXXX")
@@ -171,95 +142,75 @@ if uploaded_logo:
     with open(logo_path, "wb") as f:
         f.write(uploaded_logo.getbuffer())
 
-# ৫. মূল অ্যাপ
-st.title("📄 AI Smart-Receipt & Social Dispatcher Pro")
-st.write("---")
+# ৪. মূল অ্যাপ ইন্টারফেস (Beautiful Header)
+st.markdown('<div class="main-title">⚡ Smart-Receipt Pro Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Create professional business invoices and track billing instantly.</div>', unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
+# কাস্টমার ইনফো সেকশন
+st.markdown('<div class="section-header">👤 Customer Information</div>', unsafe_allow_html=True)
+c_col1, c_col2, c_col3 = st.columns(3)
+with c_col1:
+    v_name = st.text_input("Full Name", placeholder="e.g. Rahat Rahman")
+with c_col2:
+    v_phone = st.text_input("Phone Number", placeholder="e.g. 017XXXXXXXX")
+with c_col3:
+    v_addr = st.text_input("Delivery Address", placeholder="e.g. Sylhet, Bangladesh")
 
-with col1:
-    st.subheader("📥 Input Area")
-    fb_message = st.text_area(
-        "কাস্টমারের মেসেজটি এখানে পেস্ট করুন:", 
-        placeholder="Example: Name: Ahmed, Phone: 01711223344, Addr: Sylhet. 2ta Black T-Shirt and 1ta Blue Jeans.",
-        height=120
-    )
-    del_charge = st.number_input("Delivery Charge (TK)", min_value=0, value=60, step=10)
-    pay_method = st.selectbox("Payment Method", options=["Cash on Delivery (COD)", "bKash", "Nagad", "Rocket"])
-    paid_tk = st.number_input("Paid Amount / Advance (TK)", min_value=0, value=0, step=50)
+st.write("")
 
-with col2:
-    st.subheader("🚀 AI Generated Output")
-    if st.button("Process Message & Generate PDF", type="primary"):
-        if fb_message.strip() == "":
-            st.error("Please paste a message first!")
-        else:
-            with st.spinner("AI is reading the message and separating products..."):
-                ai_data = extract_customer_info_with_ai(fb_message)
-            st.success("AI extraction complete!")
-            
-            # সেশন স্টেটে ডেটা সেভ করা যাতে রিফ্রেশে চলে না যায়
-            st.session_state['c_name'] = ai_data.get('name', '')
-            st.session_state['c_phone'] = ai_data.get('phone', '')
-            st.session_state['c_addr'] = ai_data.get('address', '')
-            st.session_state['ai_products'] = ai_data.get('products', [])
+# প্রোডাক্ট এবং পেমেন্ট সেকশন মিক্সড করা (Side-by-Side Setup)
+col_left, col_right = st.columns([5, 4])
 
-if 'c_name' in st.session_state:
-    st.write("---")
-    st.subheader("📝 Verify Details & Order Items")
-    
-    c_col1, c_col2 = st.columns(2)
-    with c_col1:
-        v_name = st.text_input("Customer Name", st.session_state['c_name'])
-        v_phone = st.text_input("Phone", st.session_state['c_phone'])
-    with c_col2:
-        v_addr = st.text_input("Address", st.session_state['c_addr'])
-
-    st.write("#### 🛒 Products in this Order (Max 5)")
+with col_left:
+    st.markdown('<div class="section-header">🛒 Order Items (Max 5)</div>', unsafe_allow_html=True)
     products_list = []
-    
-    ai_extracted_prods = st.session_state.get('ai_products', [])
     sub_total_calc = 0
     
     for i in range(1, 6):
-        p_col1, p_col2, p_col3 = st.columns([2, 1, 1])
-        
-        # ডিফল্ট ব্ল্যাঙ্ক ভ্যালু সেটআপ
-        ai_p_name = ""
-        ai_p_qty = 1
-        ai_p_price = 0
-        
-        # যদি এআই ওই নির্দিষ্ট ইনডেক্সের জন্য কোনো প্রোডাক্ট পেয়ে থাকে
-        if len(ai_extracted_prods) >= i:
-            ai_p_name = ai_extracted_prods[i-1].get('name', '')
-            ai_p_qty = ai_extracted_prods[i-1].get('qty', 1)
-            try:
-                ai_p_price = int(ai_extracted_prods[i-1].get('price', 0))
-            except:
-                ai_p_price = 0
-        
+        p_col1, p_col2, p_col3 = st.columns([3, 1, 1.5])
         with p_col1:
-            p_name = st.text_input(f"Product {i} Name", value=ai_p_name, key=f"p{i}_name", placeholder=f"Product {i} name...")
+            p_name = st.text_input(f"Item {i}", key=f"p{i}_name", placeholder=f"Product name...")
         with p_col2:
-            p_qty = st.number_input(f"Product {i} Qty", min_value=1, value=int(ai_p_qty) if ai_p_qty else 1, step=1, key=f"p{i}_qty")
+            p_qty = st.number_input(f"Qty", min_value=1, value=1, step=1, key=f"p{i}_qty")
         with p_col3:
-            p_price = st.number_input(f"Product {i} Price (TK)", min_value=0, value=int(ai_p_price), step=50, key=f"p{i}_price")
+            p_price = st.number_input(f"Price (TK)", min_value=0, value=0, step=50, key=f"p{i}_price")
         
         if p_name.strip() != "":
             products_list.append({'name': p_name, 'qty': p_qty, 'price': p_price})
             sub_total_calc += (p_price * p_qty)
 
+with col_right:
+    st.markdown('<div class="section-header">💳 Billing & Summary</div>', unsafe_allow_html=True)
+    
+    # পেমেন্ট, ডেলিভারি চার্জ এবং পেইড অ্যামাউন্ট সব এক লাইনে ও সুন্দর বক্সে
+    pay_col1, pay_col2 = st.columns(2)
+    with pay_col1:
+        del_charge = st.number_input("Delivery Charge (TK)", min_value=0, value=60, step=10)
+        pay_method = st.selectbox("Payment Method", options=["Cash on Delivery (COD)", "bKash", "Nagad", "Rocket"])
+    with pay_col2:
+        paid_tk = st.number_input("Paid Amount / Advance (TK)", min_value=0, value=0, step=50)
+    
+    st.write("")
     grand_total_calc = sub_total_calc + del_charge
     final_due_calc = grand_total_calc - paid_tk
     
-    st.write("---")
-    st.write(f"**Total Bill:** {grand_total_calc} TK | **Paid:** {paid_tk} TK")
+    # লাইভ প্রিভিউ কার্ড (Live Preview Metrics Cards)
+    m_col1, m_col2 = st.columns(2)
+    m_col1.metric(label="Total Bill (TK)", value=f"{grand_total_calc} TK", delta=f"Items: {sub_total_calc} TK")
+    
     if final_due_calc > 0:
-        st.error(f"⚠️ **Due (Cash on Delivery):** {final_due_calc} TK")
+        m_col2.metric(label="Due / COD Amount", value=f"{final_due_calc} TK", delta="- Remaining", delta_color="inverse")
     else:
-        st.success("✅ **Status:** FULLY PAID")
+        m_col2.metric(label="Payment Status", value="FULLY PAID", delta="Success", delta_color="normal")
 
-    if st.button("Generate & Download PDF Memo", type="secondary"):
+st.markdown("---")
+
+# ডাউনলোড সেকশনটি নিচে বড় করে সাজানো
+st.markdown('<div class="section-header">📄 Actions</div>', unsafe_allow_html=True)
+if st.button("✨ Generate & Download PDF Memo", type="primary", use_container_width=True):
+    if v_name.strip() == "":
+        st.error("Please enter a Customer Name before generating the invoice!")
+    else:
         b_info = {'name': biz_name, 'email': biz_email, 'phone': biz_phone, 'logo': logo_path}
         c_info = {'name': v_name, 'phone': v_phone, 'address': v_addr}
         
@@ -271,5 +222,6 @@ if 'c_name' in st.session_state:
                 label="📥 Click here to Save PDF",
                 data=file,
                 file_name=pdf_filename,
-                mime="application/pdf"
+                mime="application/pdf",
+                use_container_width=True
             )
