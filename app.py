@@ -7,7 +7,7 @@ import os
 # ১. পেজ সেটআপ
 st.set_page_config(page_title="AI Smart-Receipt Pro", page_icon="📄", layout="wide")
 
-# ২. এআই কনফিগারেশন (স্ট্রিমলিট সিক্রেটস থেকে কি নেবে)
+# ২. এআই কনফিগারেশন
 try:
     GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
     genai.configure(api_key=GENAI_API_KEY)
@@ -74,7 +74,7 @@ class CustomReceiptPDF(FPDF):
         self.set_font('Helvetica', 'I', 8)
         self.cell(0, 10, 'Thank you for shopping with us! Powered by AI Smart-Receipt.', align='C')
 
-def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_method):
+def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_method, paid_amount):
     pdf = CustomReceiptPDF(b_info['name'], b_info['email'], b_info['phone'], b_info['logo'])
     pdf.add_page()
     
@@ -82,7 +82,7 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.set_font('Helvetica', 'B', 12)
     pdf.cell(100, 10, 'CASH RECEIPT / INVOICE', border=0)
     pdf.set_font('Helvetica', 'B', 11)
-    pdf.cell(90, 10, f"Payment Method: {payment_method}", border=0, ln=True, align='R')
+    pdf.cell(90, 10, f"Method: {payment_method}", border=0, ln=True, align='R')
     pdf.ln(5)
     
     # কাস্টমার ইনফো
@@ -104,9 +104,9 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(2)
     
-    # প্রোডাক্টগুলোর লিস্ট প্রিন্ট করা
-    pdf.set_font('Helvetica', '', 11)
+    # প্রোডাক্ট লিস্ট
     subtotal = 0
+    pdf.set_font('Helvetica', '', 11)
     for p in products_list:
         if p['name'].strip() != "":
             item_total = p['price'] * p['qty']
@@ -121,20 +121,32 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.ln(5)
     
     # হিসাব-নিকাশ সেকশন
+    total_bill = subtotal + del_charge
+    due_amount = total_bill - paid_amount
+    
     pdf.cell(160, 8, 'Subtotal:', border=0, align='R')
     pdf.cell(30, 8, f"{subtotal} TK", border=0, ln=True, align='R')
     
     pdf.cell(160, 8, 'Delivery Charge:', border=0, align='R')
     pdf.cell(30, 8, f"{del_charge} TK", border=0, ln=True, align='R')
     
-    pdf.line(140, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(2)
+    pdf.set_font('Helvetica', 'B', 11)
+    pdf.cell(160, 8, 'Total Amount:', border=0, align='R')
+    pdf.cell(30, 8, f"{total_bill} TK", border=0, ln=True, align='R')
     
-    total_bill = subtotal + del_charge
-    pdf.set_font('Helvetica', 'B', 12)
-    pdf.cell(160, 10, 'Total Payable:', border=0, align='R')
-    pdf.cell(30, 10, f"{total_bill} TK", border=0, ln=True, align='R')
+    pdf.set_text_color(0, 128, 0) # পেইড এমাউন্ট সবুজ রঙে দেখাবে
+    pdf.cell(160, 8, 'Paid Amount:', border=0, align='R')
+    pdf.cell(30, 8, f"{paid_amount} TK", border=0, ln=True, align='R')
     
+    if due_amount > 0:
+        pdf.set_text_color(255, 0, 0) # ডিউ থাকলে লাল রঙে দেখাবে
+        pdf.cell(160, 8, 'Due Amount (COD):', border=0, align='R')
+        pdf.cell(30, 8, f"{due_amount} TK", border=0, ln=True, align='R')
+    else:
+        pdf.set_text_color(0, 128, 0)
+        pdf.cell(160, 8, 'Status: FULLY PAID', border=0, ln=True, align='R')
+        
+    pdf.set_text_color(0, 0, 0) # রঙ নরমাল করা
     pdf.output(filename)
 
 # ৪. সাইডবার সেটিংস
@@ -159,13 +171,12 @@ with col1:
     st.subheader("📥 Input Area")
     fb_message = st.text_area(
         "কাস্টমারের মেসেজটি এখানে পেস্ট করুন:", 
-        placeholder="Example: Ami tanzim, 2ta black shirt ar 1ta white t-shirt nibo...",
+        placeholder="Example: Ami tanzim, 2ta black shirt nibo...",
         height=120
     )
-    
-    # ডেলিভারি চার্জ ও পেমেন্ট মেথড
     del_charge = st.radio("Delivery Charge (TK)", options=[60, 80, 120, 150], index=1, horizontal=True)
     pay_method = st.selectbox("Payment Method", options=["Cash on Delivery (COD)", "bKash", "Nagad", "Rocket"])
+    paid_tk = st.number_input("Paid Amount / Advance (TK)", min_value=0, value=0, step=50)
 
 with col2:
     st.subheader("🚀 AI Generated Output")
@@ -177,7 +188,6 @@ with col2:
                 ai_data = extract_customer_info_with_ai(fb_message)
             st.success("AI extraction complete!")
             
-            # কাস্টমার ইনফো সেশন স্টেট বা ডিরেক্ট ইনপুট
             st.session_state['c_name'] = ai_data.get('name', '')
             st.session_state['c_phone'] = ai_data.get('phone', '')
             st.session_state['c_addr'] = ai_data.get('address', '')
@@ -195,12 +205,10 @@ if 'c_name' in st.session_state:
         v_addr = st.text_input("Address", st.session_state['c_addr'])
         st.info(f"💡 **AI Suggested Product Text:** {st.session_state['p_name']}")
 
-    # ডাইনামিক মাল্টিপল প্রোডাক্ট অপশন (Quantity ও দামসহ)
     st.write("#### 🛒 Products in this Order")
-    
     products_list = []
     
-    # প্রোডাক্ট ১ (প্রধান আইটেম যা এআই খুঁজে পেয়েছে)
+    # প্রোডাক্ট ১
     p1_col1, p1_col2, p1_col3 = st.columns([2, 1, 1])
     with p1_col1:
         p1_name = st.text_input("Product 1 Name", st.session_state['p_name'])
@@ -210,7 +218,7 @@ if 'c_name' in st.session_state:
         p1_price = st.number_input("Product 1 Price (TK)", min_value=0, value=500, step=50)
     products_list.append({'name': p1_name, 'qty': p1_qty, 'price': p1_price})
 
-    # প্রোডাক্ট ২ (অন্য আরেকটি প্রোডাক্টের জন্য অপশন)
+    # প্রোডাক্ট ২
     p2_col1, p2_col2, p2_col3 = st.columns([2, 1, 1])
     with p2_col1:
         p2_name = st.text_input("Product 2 Name (Optional)", placeholder="Other product name...")
@@ -221,13 +229,25 @@ if 'c_name' in st.session_state:
     if p2_name.strip() != "":
         products_list.append({'name': p2_name, 'qty': p2_qty, 'price': p2_price})
 
-    # ফাইনাল পিডিএফ জেনারেশন বাটন
-    if st.button("Download Final PDF Memo", type="secondary"):
+    # লাইভ স্ট্যাটাস ক্যালকুলেশন স্ক্রিনে দেখানোর জন্য
+    sub_total_calc = (p1_price * p1_qty) + (p2_price * p2_qty if p2_name.strip() != "" else 0)
+    grand_total_calc = sub_total_calc + del_charge
+    final_due_calc = grand_total_calc - paid_tk
+    
+    st.write("---")
+    st.write(f"**Total Bill:** {grand_total_calc} TK | **Paid:** {paid_tk} TK")
+    if final_due_calc > 0:
+        st.error(f"⚠️ **Due (Cash on Delivery):** {final_due_calc} TK")
+    else:
+        st.success("✅ **Status:** FULLY PAID")
+
+    # পিডিএফ জেনারেশন বাটন
+    if st.button("Generate & Download PDF Memo", type="secondary"):
         b_info = {'name': biz_name, 'email': biz_email, 'phone': biz_phone, 'logo': logo_path}
         c_info = {'name': v_name, 'phone': v_phone, 'address': v_addr}
         
         pdf_filename = f"Receipt_{v_name.replace(' ', '_')}.pdf"
-        generate_pdf(pdf_filename, b_info, c_info, products_list, del_charge, pay_method)
+        generate_pdf(pdf_filename, b_info, c_info, products_list, del_charge, pay_method, paid_tk)
         
         with open(pdf_filename, "rb") as file:
             st.download_button(
