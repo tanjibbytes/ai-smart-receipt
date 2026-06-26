@@ -38,12 +38,12 @@ def extract_customer_info_with_ai(raw_message):
         data = json.loads(text_data)
         return data
     except Exception as e:
-        return {{
+        return {
             "name": "Extraction Failed",
             "phone": "N/A",
             "address": "Please type manually",
             "product": "Please type manually"
-        }}
+        }
 
 # ৩. পিডিএফ জেনারেটর ক্লাস
 class CustomReceiptPDF(FPDF):
