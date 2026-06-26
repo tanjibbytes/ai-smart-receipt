@@ -3,6 +3,7 @@ from fpdf import FPDF
 import google.generativeai as genai
 import json
 import os
+import re
 
 # ১. পেজ সেটআপ
 st.set_page_config(page_title="AI Smart-Receipt Pro", page_icon="📄", layout="wide")
@@ -16,33 +17,47 @@ except Exception as e:
 
 def extract_customer_info_with_ai(raw_message):
     model = genai.GenerativeModel('gemini-1.5-flash')
+    
     prompt = f"""
-    You are an expert order management AI. Analyze the following Facebook/Instagram order message and extract the details in strict JSON format.
-    Convert Banglish names or addresses to proper English if appropriate, but keep Bangladeshi context (e.g., Sylhet, Dhaka).
+    You are an expert order management AI. Analyze the following online shopping order message from Bangladesh and extract details.
+    
+    Instructions:
+    1. Extract Customer Name, Phone, and Address. 
+    2. Identify all products mentioned. Extract up to 5 distinct products.
+    3. For each product, extract its name (clean and readable), quantity (default to 1 if not mentioned), and price (default to 0 if not mentioned).
     
     Message: "{raw_message}"
     
-    Output Format (Strictly return ONLY valid JSON, no markdown codeblocks, no extra text):
+    Return ONLY a raw JSON object matching this structure, with no markdown formatting, no ```json tags, and no extra text:
     {{
         "name": "Customer Name",
         "phone": "Phone Number",
-        "address": "Full Delivery Address",
-        "product": "Product Name and Size/Color details"
+        "address": "Delivery Address",
+        "products": [
+            {{"name": "Product Name 1", "qty": 1, "price": 0}},
+            {{"name": "Product Name 2", "qty": 2, "price": 450}}
+        ]
     }}
     """
+    
     try:
         response = model.generate_content(prompt)
         text_data = response.text.strip()
-        if text_data.startswith("```json"):
-            text_data = text_data.replace("```json", "").replace("```", "").strip()
+        
+        # ক্লিনিং: যদি এআই ভুল করে কোনো ব্যাকটিক বা ```json ব্লক দেয় তা কেটে ফেলা
+        if "```" in text_data:
+            text_data = re.sub(r'```[a-zA-Z]*', '', text_data).strip()
+            
         data = json.loads(text_data)
         return data
     except Exception as e:
+        # ব্যাকআপ সলিউশন: কোনো কারণে ফেল করলে ক্র্যাশ করবে না
+        phone_match = re.search(r'(01[3-9]\d{8})', raw_message)
         return {
-            "name": "Extraction Failed",
-            "phone": "N/A",
-            "address": "Please type manually",
-            "product": "Please type manually"
+            "name": "Customer Name",
+            "phone": phone_match.group(1).strip() if phone_match else "N/A",
+            "address": "Please type address manually",
+            "products": []
         }
 
 # ৩. পিডিএফ জেনারেটর ক্লাস
@@ -166,10 +181,9 @@ with col1:
     st.subheader("📥 Input Area")
     fb_message = st.text_area(
         "কাস্টমারের মেসেজটি এখানে পেস্ট করুন:", 
-        placeholder="Example: Ami tanzim, 3ta black shirt, 1ta jeans, 1ta cap nibo...",
+        placeholder="Example: Name: Ahmed, Phone: 01711223344, Addr: Sylhet. 2ta Black T-Shirt and 1ta Blue Jeans.",
         height=120
     )
-    # রেডিও বাটন পরিবর্তন করে সরাসরি টাইপ করার বক্স দেওয়া হলো
     del_charge = st.number_input("Delivery Charge (TK)", min_value=0, value=60, step=10)
     pay_method = st.selectbox("Payment Method", options=["Cash on Delivery (COD)", "bKash", "Nagad", "Rocket"])
     paid_tk = st.number_input("Paid Amount / Advance (TK)", min_value=0, value=0, step=50)
@@ -180,14 +194,15 @@ with col2:
         if fb_message.strip() == "":
             st.error("Please paste a message first!")
         else:
-            with st.spinner("AI is reading the message..."):
+            with st.spinner("AI is reading the message and separating products..."):
                 ai_data = extract_customer_info_with_ai(fb_message)
             st.success("AI extraction complete!")
             
+            # সেশন স্টেটে ডেটা সেভ করা যাতে রিফ্রেশে চলে না যায়
             st.session_state['c_name'] = ai_data.get('name', '')
             st.session_state['c_phone'] = ai_data.get('phone', '')
             st.session_state['c_addr'] = ai_data.get('address', '')
-            st.session_state['p_name'] = ai_data.get('product', '')
+            st.session_state['ai_products'] = ai_data.get('products', [])
 
 if 'c_name' in st.session_state:
     st.write("---")
@@ -199,24 +214,36 @@ if 'c_name' in st.session_state:
         v_phone = st.text_input("Phone", st.session_state['c_phone'])
     with c_col2:
         v_addr = st.text_input("Address", st.session_state['c_addr'])
-        st.info(f"💡 **AI Suggested Product Text:** {st.session_state['p_name']}")
 
     st.write("#### 🛒 Products in this Order (Max 5)")
     products_list = []
     
-    # ৫টি প্রোডাক্টের ডাইনামিক লুপ তৈরি
+    ai_extracted_prods = st.session_state.get('ai_products', [])
     sub_total_calc = 0
+    
     for i in range(1, 6):
         p_col1, p_col2, p_col3 = st.columns([2, 1, 1])
+        
+        # ডিফল্ট ব্ল্যাঙ্ক ভ্যালু সেটআপ
+        ai_p_name = ""
+        ai_p_qty = 1
+        ai_p_price = 0
+        
+        # যদি এআই ওই নির্দিষ্ট ইনডেক্সের জন্য কোনো প্রোডাক্ট পেয়ে থাকে
+        if len(ai_extracted_prods) >= i:
+            ai_p_name = ai_extracted_prods[i-1].get('name', '')
+            ai_p_qty = ai_extracted_prods[i-1].get('qty', 1)
+            try:
+                ai_p_price = int(ai_extracted_prods[i-1].get('price', 0))
+            except:
+                ai_p_price = 0
+        
         with p_col1:
-            # প্রথম প্রোডাক্টের নাম এআই সাজেস্ট করবে, বাকিগুলো খালি থাকবে
-            default_name = st.session_state['p_name'] if i == 1 else ""
-            p_name = st.text_input(f"Product {i} Name", value=default_name, key=f"p{i}_name", placeholder=f"Product {i} name (Optional)..." if i > 1 else "")
+            p_name = st.text_input(f"Product {i} Name", value=ai_p_name, key=f"p{i}_name", placeholder=f"Product {i} name...")
         with p_col2:
-            p_qty = st.number_input(f"Product {i} Qty", min_value=1, value=1, step=1, key=f"p{i}_qty")
+            p_qty = st.number_input(f"Product {i} Qty", min_value=1, value=int(ai_p_qty) if ai_p_qty else 1, step=1, key=f"p{i}_qty")
         with p_col3:
-            default_price = 500 if i == 1 else 0
-            p_price = st.number_input(f"Product {i} Price (TK)", min_value=0, value=default_price, step=50, key=f"p{i}_price")
+            p_price = st.number_input(f"Product {i} Price (TK)", min_value=0, value=int(ai_p_price), step=50, key=f"p{i}_price")
         
         if p_name.strip() != "":
             products_list.append({'name': p_name, 'qty': p_qty, 'price': p_price})
@@ -232,7 +259,6 @@ if 'c_name' in st.session_state:
     else:
         st.success("✅ **Status:** FULLY PAID")
 
-    # পিডিএফ জেনারেশন বাটন
     if st.button("Generate & Download PDF Memo", type="secondary"):
         b_info = {'name': biz_name, 'email': biz_email, 'phone': biz_phone, 'logo': logo_path}
         c_info = {'name': v_name, 'phone': v_phone, 'address': v_addr}
