@@ -78,14 +78,12 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf = CustomReceiptPDF(b_info['name'], b_info['email'], b_info['phone'], b_info['logo'])
     pdf.add_page()
     
-    # ইনভয়েস টাইটেল ও পেমেন্ট মেথড
     pdf.set_font('Helvetica', 'B', 12)
     pdf.cell(100, 10, 'CASH RECEIPT / INVOICE', border=0)
     pdf.set_font('Helvetica', 'B', 11)
     pdf.cell(90, 10, f"Method: {payment_method}", border=0, ln=True, align='R')
     pdf.ln(5)
     
-    # কাস্টমার ইনফো
     pdf.set_font('Helvetica', '', 11)
     pdf.cell(0, 7, f"Customer Name: {c_info['name']}", ln=True)
     pdf.cell(0, 7, f"Mobile: {c_info['phone']}", ln=True)
@@ -95,7 +93,6 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    # টেবিল হেডার
     pdf.set_font('Helvetica', 'B', 11)
     pdf.cell(100, 10, 'Item Description', border=0)
     pdf.cell(30, 10, 'Qty', border=0, align='C')
@@ -104,7 +101,6 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(2)
     
-    # প্রোডাক্ট লিস্ট
     subtotal = 0
     pdf.set_font('Helvetica', '', 11)
     for p in products_list:
@@ -120,7 +116,6 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    # হিসাব-নিকাশ সেকশন
     total_bill = subtotal + del_charge
     due_amount = total_bill - paid_amount
     
@@ -134,19 +129,19 @@ def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_me
     pdf.cell(160, 8, 'Total Amount:', border=0, align='R')
     pdf.cell(30, 8, f"{total_bill} TK", border=0, ln=True, align='R')
     
-    pdf.set_text_color(0, 128, 0) # পেইড এমাউন্ট সবুজ রঙে দেখাবে
+    pdf.set_text_color(0, 128, 0)
     pdf.cell(160, 8, 'Paid Amount:', border=0, align='R')
     pdf.cell(30, 8, f"{paid_amount} TK", border=0, ln=True, align='R')
     
     if due_amount > 0:
-        pdf.set_text_color(255, 0, 0) # ডিউ থাকলে লাল রঙে দেখাবে
+        pdf.set_text_color(255, 0, 0)
         pdf.cell(160, 8, 'Due Amount (COD):', border=0, align='R')
         pdf.cell(30, 8, f"{due_amount} TK", border=0, ln=True, align='R')
     else:
         pdf.set_text_color(0, 128, 0)
         pdf.cell(160, 8, 'Status: FULLY PAID', border=0, ln=True, align='R')
         
-    pdf.set_text_color(0, 0, 0) # রঙ নরমাল করা
+    pdf.set_text_color(0, 0, 0)
     pdf.output(filename)
 
 # ৪. সাইডবার সেটিংস
@@ -171,10 +166,11 @@ with col1:
     st.subheader("📥 Input Area")
     fb_message = st.text_area(
         "কাস্টমারের মেসেজটি এখানে পেস্ট করুন:", 
-        placeholder="Example: Ami tanzim, 2ta black shirt nibo...",
+        placeholder="Example: Ami tanzim, 3ta black shirt, 1ta jeans, 1ta cap nibo...",
         height=120
     )
-    del_charge = st.radio("Delivery Charge (TK)", options=[60, 80, 120, 150], index=1, horizontal=True)
+    # রেডিও বাটন পরিবর্তন করে সরাসরি টাইপ করার বক্স দেওয়া হলো
+    del_charge = st.number_input("Delivery Charge (TK)", min_value=0, value=60, step=10)
     pay_method = st.selectbox("Payment Method", options=["Cash on Delivery (COD)", "bKash", "Nagad", "Rocket"])
     paid_tk = st.number_input("Paid Amount / Advance (TK)", min_value=0, value=0, step=50)
 
@@ -205,32 +201,27 @@ if 'c_name' in st.session_state:
         v_addr = st.text_input("Address", st.session_state['c_addr'])
         st.info(f"💡 **AI Suggested Product Text:** {st.session_state['p_name']}")
 
-    st.write("#### 🛒 Products in this Order")
+    st.write("#### 🛒 Products in this Order (Max 5)")
     products_list = []
     
-    # প্রোডাক্ট ১
-    p1_col1, p1_col2, p1_col3 = st.columns([2, 1, 1])
-    with p1_col1:
-        p1_name = st.text_input("Product 1 Name", st.session_state['p_name'])
-    with p1_col2:
-        p1_qty = st.number_input("Product 1 Qty", min_value=1, value=1, step=1)
-    with p1_col3:
-        p1_price = st.number_input("Product 1 Price (TK)", min_value=0, value=500, step=50)
-    products_list.append({'name': p1_name, 'qty': p1_qty, 'price': p1_price})
+    # ৫টি প্রোডাক্টের ডাইনামিক লুপ তৈরি
+    sub_total_calc = 0
+    for i in range(1, 6):
+        p_col1, p_col2, p_col3 = st.columns([2, 1, 1])
+        with p_col1:
+            # প্রথম প্রোডাক্টের নাম এআই সাজেস্ট করবে, বাকিগুলো খালি থাকবে
+            default_name = st.session_state['p_name'] if i == 1 else ""
+            p_name = st.text_input(f"Product {i} Name", value=default_name, key=f"p{i}_name", placeholder=f"Product {i} name (Optional)..." if i > 1 else "")
+        with p_col2:
+            p_qty = st.number_input(f"Product {i} Qty", min_value=1, value=1, step=1, key=f"p{i}_qty")
+        with p_col3:
+            default_price = 500 if i == 1 else 0
+            p_price = st.number_input(f"Product {i} Price (TK)", min_value=0, value=default_price, step=50, key=f"p{i}_price")
+        
+        if p_name.strip() != "":
+            products_list.append({'name': p_name, 'qty': p_qty, 'price': p_price})
+            sub_total_calc += (p_price * p_qty)
 
-    # প্রোডাক্ট ২
-    p2_col1, p2_col2, p2_col3 = st.columns([2, 1, 1])
-    with p2_col1:
-        p2_name = st.text_input("Product 2 Name (Optional)", placeholder="Other product name...")
-    with p2_col2:
-        p2_qty = st.number_input("Product 2 Qty", min_value=1, value=1, step=1, key="p2_qty")
-    with p2_col3:
-        p2_price = st.number_input("Product 2 Price (TK)", min_value=0, value=0, step=50, key="p2_price")
-    if p2_name.strip() != "":
-        products_list.append({'name': p2_name, 'qty': p2_qty, 'price': p2_price})
-
-    # লাইভ স্ট্যাটাস ক্যালকুলেশন স্ক্রিনে দেখানোর জন্য
-    sub_total_calc = (p1_price * p1_qty) + (p2_price * p2_qty if p2_name.strip() != "" else 0)
     grand_total_calc = sub_total_calc + del_charge
     final_due_calc = grand_total_calc - paid_tk
     
