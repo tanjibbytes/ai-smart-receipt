@@ -74,12 +74,18 @@ class CustomReceiptPDF(FPDF):
         self.set_font('Helvetica', 'I', 8)
         self.cell(0, 10, 'Thank you for shopping with us! Powered by AI Smart-Receipt.', align='C')
 
-def generate_pdf(filename, b_info, c_info, order_info):
+def generate_pdf(filename, b_info, c_info, products_list, del_charge, payment_method):
     pdf = CustomReceiptPDF(b_info['name'], b_info['email'], b_info['phone'], b_info['logo'])
     pdf.add_page()
     
+    # ইনভয়েস টাইটেল ও পেমেন্ট মেথড
     pdf.set_font('Helvetica', 'B', 12)
-    pdf.cell(0, 10, 'CASH RECEIPT / INVOICE', ln=True)
+    pdf.cell(100, 10, 'CASH RECEIPT / INVOICE', border=0)
+    pdf.set_font('Helvetica', 'B', 11)
+    pdf.cell(90, 10, f"Payment Method: {payment_method}", border=0, ln=True, align='R')
+    pdf.ln(5)
+    
+    # কাস্টমার ইনফো
     pdf.set_font('Helvetica', '', 11)
     pdf.cell(0, 7, f"Customer Name: {c_info['name']}", ln=True)
     pdf.cell(0, 7, f"Mobile: {c_info['phone']}", ln=True)
@@ -89,25 +95,45 @@ def generate_pdf(filename, b_info, c_info, order_info):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
+    # টেবিল হেডার
     pdf.set_font('Helvetica', 'B', 11)
-    pdf.cell(130, 10, 'Item Description', border=0)
-    pdf.cell(60, 10, 'Price', border=0, ln=True, align='R')
+    pdf.cell(100, 10, 'Item Description', border=0)
+    pdf.cell(30, 10, 'Qty', border=0, align='C')
+    pdf.cell(30, 10, 'Unit Price', border=0, align='R')
+    pdf.cell(30, 10, 'Total Price', border=0, ln=True, align='R')
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
     
+    # প্রোডাক্টগুলোর লিস্ট প্রিন্ট করা
     pdf.set_font('Helvetica', '', 11)
-    pdf.cell(130, 10, order_info['product'], border=0)
-    pdf.cell(60, 10, f"{order_info['price']} TK", border=0, ln=True, align='R')
-    
-    pdf.cell(130, 10, 'Delivery Charge', border=0)
-    pdf.cell(60, 10, f"{order_info['delivery']} TK", border=0, ln=True, align='R')
+    subtotal = 0
+    for p in products_list:
+        if p['name'].strip() != "":
+            item_total = p['price'] * p['qty']
+            subtotal += item_total
+            pdf.cell(100, 10, p['name'], border=0)
+            pdf.cell(30, 10, str(p['qty']), border=0, align='C')
+            pdf.cell(30, 10, f"{p['price']} TK", border=0, align='R')
+            pdf.cell(30, 10, f"{item_total} TK", border=0, ln=True, align='R')
     
     pdf.ln(5)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    total_bill = order_info['price'] + order_info['delivery']
+    # হিসাব-নিকাশ সেকশন
+    pdf.cell(160, 8, 'Subtotal:', border=0, align='R')
+    pdf.cell(30, 8, f"{subtotal} TK", border=0, ln=True, align='R')
+    
+    pdf.cell(160, 8, 'Delivery Charge:', border=0, align='R')
+    pdf.cell(30, 8, f"{del_charge} TK", border=0, ln=True, align='R')
+    
+    pdf.line(140, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+    
+    total_bill = subtotal + del_charge
     pdf.set_font('Helvetica', 'B', 12)
-    pdf.cell(130, 10, 'Total Payable:', border=0)
-    pdf.cell(60, 10, f"{total_bill} TK", border=0, ln=True, align='R')
+    pdf.cell(160, 10, 'Total Payable:', border=0, align='R')
+    pdf.cell(30, 10, f"{total_bill} TK", border=0, ln=True, align='R')
     
     pdf.output(filename)
 
@@ -125,7 +151,6 @@ if uploaded_logo:
 
 # ৫. মূল অ্যাপ
 st.title("📄 AI Smart-Receipt & Social Dispatcher Pro")
-st.write("ফেসবুক/ইনস্টাগ্রাম মেসেজ পেস্ট করে এক ক্লিকে পিডিএফ মেমো তৈরি করুন।")
 st.write("---")
 
 col1, col2 = st.columns(2)
@@ -134,11 +159,13 @@ with col1:
     st.subheader("📥 Input Area")
     fb_message = st.text_area(
         "কাস্টমারের মেসেজটি এখানে পেস্ট করুন:", 
-        placeholder="Example: Ami tanzim, Sylhet zindabazar thaki. 01712345678. Black Hoodie ta diben L size...",
-        height=150
+        placeholder="Example: Ami tanzim, 2ta black shirt ar 1ta white t-shirt nibo...",
+        height=120
     )
-    prod_price = st.number_input("Product Price (TK)", min_value=0, value=0, step=50)
-    del_charge = st.radio("Delivery Charge (TK)", options=[60, 80, 120, 150], index=1)
+    
+    # ডেলিভারি চার্জ ও পেমেন্ট মেথড
+    del_charge = st.radio("Delivery Charge (TK)", options=[60, 80, 120, 150], index=1, horizontal=True)
+    pay_method = st.selectbox("Payment Method", options=["Cash on Delivery (COD)", "bKash", "Nagad", "Rocket"])
 
 with col2:
     st.subheader("🚀 AI Generated Output")
@@ -148,26 +175,64 @@ with col2:
         else:
             with st.spinner("AI is reading the message..."):
                 ai_data = extract_customer_info_with_ai(fb_message)
-            
             st.success("AI extraction complete!")
             
-            # এআই থেকে পাওয়া ডেটা এডিটেবল বক্সে দেখানো
-            c_name = st.text_input("Customer Name", ai_data.get('name', ''))
-            c_phone = st.text_input("Phone", ai_data.get('phone', ''))
-            c_addr = st.text_input("Address", ai_data.get('address', ''))
-            p_name = st.text_input("Product Details", ai_data.get('product', ''))
-            
-            b_info = {'name': biz_name, 'email': biz_email, 'phone': biz_phone, 'logo': logo_path}
-            c_info = {'name': c_name, 'phone': c_phone, 'address': c_addr}
-            order_info = {'product': p_name, 'price': prod_price, 'delivery': del_charge}
-            
-            pdf_filename = f"Receipt_{c_name.replace(' ', '_')}.pdf"
-            generate_pdf(pdf_filename, b_info, c_info, order_info)
-            
-            with open(pdf_filename, "rb") as file:
-                st.download_button(
-                    label="📥 Download PDF Receipt",
-                    data=file,
-                    file_name=pdf_filename,
-                    mime="application/pdf"
-                )
+            # কাস্টমার ইনফো সেশন স্টেট বা ডিরেক্ট ইনপুট
+            st.session_state['c_name'] = ai_data.get('name', '')
+            st.session_state['c_phone'] = ai_data.get('phone', '')
+            st.session_state['c_addr'] = ai_data.get('address', '')
+            st.session_state['p_name'] = ai_data.get('product', '')
+
+if 'c_name' in st.session_state:
+    st.write("---")
+    st.subheader("📝 Verify Details & Order Items")
+    
+    c_col1, c_col2 = st.columns(2)
+    with c_col1:
+        v_name = st.text_input("Customer Name", st.session_state['c_name'])
+        v_phone = st.text_input("Phone", st.session_state['c_phone'])
+    with c_col2:
+        v_addr = st.text_input("Address", st.session_state['c_addr'])
+        st.info(f"💡 **AI Suggested Product Text:** {st.session_state['p_name']}")
+
+    # ডাইনামিক মাল্টিপল প্রোডাক্ট অপশন (Quantity ও দামসহ)
+    st.write("#### 🛒 Products in this Order")
+    
+    products_list = []
+    
+    # প্রোডাক্ট ১ (প্রধান আইটেম যা এআই খুঁজে পেয়েছে)
+    p1_col1, p1_col2, p1_col3 = st.columns([2, 1, 1])
+    with p1_col1:
+        p1_name = st.text_input("Product 1 Name", st.session_state['p_name'])
+    with p1_col2:
+        p1_qty = st.number_input("Product 1 Qty", min_value=1, value=1, step=1)
+    with p1_col3:
+        p1_price = st.number_input("Product 1 Price (TK)", min_value=0, value=500, step=50)
+    products_list.append({'name': p1_name, 'qty': p1_qty, 'price': p1_price})
+
+    # প্রোডাক্ট ২ (অন্য আরেকটি প্রোডাক্টের জন্য অপশন)
+    p2_col1, p2_col2, p2_col3 = st.columns([2, 1, 1])
+    with p2_col1:
+        p2_name = st.text_input("Product 2 Name (Optional)", placeholder="Other product name...")
+    with p2_col2:
+        p2_qty = st.number_input("Product 2 Qty", min_value=1, value=1, step=1, key="p2_qty")
+    with p2_col3:
+        p2_price = st.number_input("Product 2 Price (TK)", min_value=0, value=0, step=50, key="p2_price")
+    if p2_name.strip() != "":
+        products_list.append({'name': p2_name, 'qty': p2_qty, 'price': p2_price})
+
+    # ফাইনাল পিডিএফ জেনারেশন বাটন
+    if st.button("Download Final PDF Memo", type="secondary"):
+        b_info = {'name': biz_name, 'email': biz_email, 'phone': biz_phone, 'logo': logo_path}
+        c_info = {'name': v_name, 'phone': v_phone, 'address': v_addr}
+        
+        pdf_filename = f"Receipt_{v_name.replace(' ', '_')}.pdf"
+        generate_pdf(pdf_filename, b_info, c_info, products_list, del_charge, pay_method)
+        
+        with open(pdf_filename, "rb") as file:
+            st.download_button(
+                label="📥 Click here to Save PDF",
+                data=file,
+                file_name=pdf_filename,
+                mime="application/pdf"
+            )
